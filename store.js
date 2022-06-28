@@ -35,7 +35,7 @@ export class Store {
 
         // 获取根的 state
         const state = this._modules.root.state
-        // 安装子模块和模块的 getters
+        // 安装子模块
         installModule(this, state, [], this._modules.root)
 
         resetStoreVM(this, state)
@@ -46,7 +46,8 @@ export class Store {
     }
 
     commit(type, payload, options) {
-        // const mutation = { type, payload }
+        // 获取命名为 type 的 mutations 集合，依次执行，执行顺序先执行父，后执行子
+        // 传入的参数为调用 commit 时传入的参数：this.$store.commit('type', 参数)
         const entry = this._mutations[type]
         if (!entry) {
             console.error(`[vuex] unknown mutation type: ${type}`)
@@ -60,16 +61,16 @@ export class Store {
     }
 
     dispatch(type, payload) {
-        // const action = { type, payload }
         const entry = this._actions[type]
         if (!entry) {
             console.error(`[vuex] unknown action type: ${type}`)
             return
         }
+        // 获取结果集
         const result = entry.length > 1
             ? Promise.all(entry.map(handler => handler(payload)))
             : entry[0](payload)
-
+        // 用 Promise 表示每一个 dispatch 是一个异步操作
         return new Promise((resolve, reject) => {
             result.then(res => {
                 resolve(res)
@@ -82,12 +83,6 @@ export class Store {
         this._committing = true
         fn()
         this._committing = committing
-    }
-
-    replaceState(state) {
-        this._withCommit(() => {
-            this._vm._data.$$state = state
-        })
     }
 
     registerModule(path, rawModule, options = {}) {
@@ -104,13 +99,15 @@ function installModule(store, rootState, path, module) {
     // 判断是否是根
     const isRoot = !path.length
     const namespace = store._modules.getNamespace(path)
-
+    console.log(namespace)
+    // 如果 namespaced 为真，则表示以模块名为命名，存到命名空间 map 中
     if (module.namespaced) {
         if (store._modulesNameSpaceMap[namespace]) {
             console.error(`[vuex] duplicate namespace ${namespace} for the namespaced module ${path.join('/')}`)
         }
         store._modulesNameSpaceMap[namespace] = module
     }
+    // 如果不是根模块，则将子模块的属性进行响应式处理
     if (!isRoot) {
         // 获取嵌套的 state 的父 state
         const parentState = getNestedState(rootState, path.slice(0, -1))
@@ -118,10 +115,10 @@ function installModule(store, rootState, path, module) {
         const moduleName = path[path.length - 1]
         store._withCommit(() => {
             Vue.set(parentState, moduleName, module.state)
-            // parentState[moduleName] = module.state
         })
     }
 
+    // 创建上下文
     const local = module.context = makeLocalContext(store, namespace, path)
 
     // 注册 mutations actions getters
@@ -137,6 +134,7 @@ function installModule(store, rootState, path, module) {
     })
 
     module.forEachGetter((getter, key) => {
+        // 有命名空间则 key 为 namespace/xxx, 后续在 mapGetters 中通过 namespace/xxx 获取变量
         const namespacedType = namespace + key
         registerGetter(store, namespacedType, getter, local)
     })
@@ -156,6 +154,7 @@ function getNestedState(state, path) {
 function makeLocalContext(store, namespace, path) {
     const noNamespace = namespace === ''
     let local = {
+        // 如果有命名空间, 则对提交的 type 进行处理
         dispatch: noNamespace ? store.dispatch : (type, payload, options) => {
             if (!options || !options.root) {
                 type = namespace + type
@@ -184,9 +183,7 @@ function makeLocalContext(store, namespace, path) {
                 : () => makeLocalGetters(store, namespace)
         },
         state: {
-            get: () => {
-                return getNestedState(store.state, path)
-            }
+            get: () => getNestedState(store.state, path)
         }
     })
     return local
@@ -213,6 +210,7 @@ function makeLocalGetters(store, namespace) {
 }
 
 function registerMutation(store, type, handler, local) {
+    // mutation 是一个数组, 存放回调函数, 调用时会依次执行数组里面的回调函数
     const entry = store._mutations[type] || (store._mutations[type] = [])
     entry.push(function (payload) {
         handler.call(store, local.state, payload)

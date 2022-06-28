@@ -19,7 +19,7 @@ export default class ModuleCollection {
         if (path.length === 0) {
             this.root = newModule
         } else {
-            // 获取父实例
+            // 获取父模块
             const parent = this.get(path.slice(0, -1))
             parent.addChild(path[path.length - 1], newModule)
         }
@@ -32,6 +32,7 @@ export default class ModuleCollection {
         }
     }
 
+    // 获取命名空间，以模块名来命名
     getNamespace(path) {
         let module = this.root
         return path.reduce((namespace, key) => {
